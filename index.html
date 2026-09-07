@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Image Resize & Compress Tool | MEENA MULTI SERVICES CENTER</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fb;color:#172033}
+.container{max-width:850px;margin:25px auto;padding:18px}
+.card{background:#fff;border-radius:18px;padding:25px;box-shadow:0 8px 30px rgba(0,0,0,.08)}
+h1{text-align:center;margin:5px 0;color:#d71920;font-size:28px}
+.sub{text-align:center;color:#667085;margin-bottom:22px}
+.upload{border:2px dashed #1d72e8;border-radius:14px;padding:30px;text-align:center;background:#f8fbff;cursor:pointer}
+.upload input{display:none}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}
+label{font-weight:700;font-size:14px}
+input,select,button{width:100%;padding:12px;border:1px solid #d0d5dd;border-radius:10px;font-size:15px;margin-top:7px}
+button{border:0;background:#d71920;color:#fff;font-weight:700;cursor:pointer}
+button.secondary{background:#1d72e8}
+button:disabled{opacity:.5;cursor:not-allowed}
+.preview{display:none;margin-top:22px;text-align:center}
+.preview img{max-width:100%;max-height:350px;border-radius:10px;border:1px solid #ddd}
+.stats{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:12px 0;color:#475467}
+.badge{background:#eef4ff;padding:7px 10px;border-radius:20px;font-size:13px}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:15px}
+.note{text-align:center;font-size:12px;color:#667085;margin-top:18px}
+@media(max-width:600px){.grid,.actions{grid-template-columns:1fr}h1{font-size:23px}}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="card">
+<h1>IMAGE RESIZE & COMPRESS</h1>
+<div class="sub">MEENA MULTI SERVICES CENTER</div>
+
+<label class="upload" id="uploadBox">
+  <strong>📷 Image चुनें</strong><br>
+  <span>JPG, PNG या WEBP</span>
+  <input type="file" id="file" accept="image/jpeg,image/png,image/webp">
+</label>
+
+<div class="grid">
+  <div>
+    <label>Width (px)</label>
+    <input type="number" id="width" min="1" placeholder="जैसे 200">
+  </div>
+  <div>
+    <label>Height (px)</label>
+    <input type="number" id="height" min="1" placeholder="जैसे 300">
+  </div>
+  <div>
+    <label>Target Size (KB) — optional</label>
+    <input type="number" id="target" min="1" placeholder="जैसे 50">
+  </div>
+  <div>
+    <label>Format</label>
+    <select id="format">
+      <option value="image/jpeg">JPG</option>
+      <option value="image/png">PNG</option>
+      <option value="image/webp">WEBP</option>
+    </select>
+  </div>
+</div>
+
+<div style="margin-top:14px">
+<label><input type="checkbox" id="lock" checked style="width:auto;margin-right:7px"> Aspect Ratio Lock</label>
+</div>
+
+<div class="actions">
+<button id="process" disabled>Resize & Compress</button>
+<button class="secondary" id="reset">Reset</button>
+</div>
+
+<div class="preview" id="preview">
+<h3>Preview</h3>
+<img id="resultImg" alt="Processed image">
+<div class="stats">
+<span class="badge" id="dimensions"></span>
+<span class="badge" id="size"></span>
+</div>
+<button id="download">⬇️ Download Image</button>
+</div>
+
+<div class="note">आपकी फोटो इसी browser में process होती है; server पर upload नहीं की जाती।</div>
+</div>
+</div>
+
+<script>
+const fileInput=document.getElementById('file');
+const processBtn=document.getElementById('process');
+const widthInput=document.getElementById('width');
+const heightInput=document.getElementById('height');
+const targetInput=document.getElementById('target');
+const formatInput=document.getElementById('format');
+const lockInput=document.getElementById('lock');
+const preview=document.getElementById('preview');
+const resultImg=document.getElementById('resultImg');
+let original=null, outputBlob=null;
+
+document.getElementById('uploadBox').addEventListener('click',()=>fileInput.click());
+
+fileInput.addEventListener('change',()=>{
+ const f=fileInput.files[0]; if(!f)return;
+ const img=new Image();
+ img.onload=()=>{
+   original=img;
+   widthInput.value=img.naturalWidth;
+   heightInput.value=img.naturalHeight;
+   processBtn.disabled=false;
+   preview.style.display='none';
+ };
+ img.src=URL.createObjectURL(f);
+});
+
+widthInput.addEventListener('input',()=>{
+ if(lockInput.checked && original && widthInput.value)
+   heightInput.value=Math.round(widthInput.value*original.naturalHeight/original.naturalWidth);
+});
+heightInput.addEventListener('input',()=>{
+ if(lockInput.checked && original && heightInput.value)
+   widthInput.value=Math.round(heightInput.value*original.naturalWidth/original.naturalHeight);
+});
+
+function canvasBlob(canvas,type,q){
+ return new Promise(r=>canvas.toBlob(r,type,q));
+}
+
+async function makeBlob(canvas,type,targetKB){
+ let quality=0.9, blob=await canvasBlob(canvas,type,quality);
+ if(!targetKB || type==='image/png') return blob;
+ const target=targetKB*1024;
+ for(let i=0;i<10 && blob.size>target;i++){
+   quality=Math.max(.05,quality-.09);
+   blob=await canvasBlob(canvas,type,quality);
+ }
+ return blob;
+}
+
+processBtn.addEventListener('click',async()=>{
+ if(!original)return;
+ const w=Math.max(1,parseInt(widthInput.value)||original.naturalWidth);
+ const h=Math.max(1,parseInt(heightInput.value)||original.naturalHeight);
+ const type=formatInput.value;
+ const canvas=document.createElement('canvas');
+ canvas.width=w; canvas.height=h;
+ const ctx=canvas.getContext('2d');
+ if(type==='image/jpeg') {ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);}
+ ctx.drawImage(original,0,0,w,h);
+ outputBlob=await makeBlob(canvas,type,parseFloat(targetInput.value)||null);
+ resultImg.src=URL.createObjectURL(outputBlob);
+ document.getElementById('dimensions').textContent=`${w} × ${h} px`;
+ document.getElementById('size').textContent=`${(outputBlob.size/1024).toFixed(1)} KB`;
+ preview.style.display='block';
+});
+
+document.getElementById('download').addEventListener('click',()=>{
+ if(!outputBlob)return;
+ const ext=formatInput.value.split('/')[1].replace('jpeg','jpg');
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(outputBlob);
+ a.download=`meena-resized-image.${ext}`;
+ a.click();
+});
+
+document.getElementById('reset').addEventListener('click',()=>{
+ fileInput.value=''; original=null; outputBlob=null; processBtn.disabled=true;
+ preview.style.display='none'; widthInput.value=''; heightInput.value=''; targetInput.value='';
+});
+</script>
+</body>
+</html>
