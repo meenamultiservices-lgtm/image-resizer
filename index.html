@@ -31,10 +31,10 @@ button.blue{background:#1d72e8}button:disabled{opacity:.5;cursor:not-allowed}
 <h1>IMAGE RESIZE & COMPRESS</h1>
 <div class="sub">Resize • Compress • Convert your image</div>
 
-<div class="upload">
+<div class="upload" id="dropZone">
 <label for="file">📷 Upload / Choose Image</label>
 <input id="file" type="file" accept="image/jpeg,image/png,image/webp">
-<div id="fileName">JPG, PNG या WEBP image चुनें</div>
+<div id="fileName">JPG, PNG या WEBP image चुनें — या यहाँ Drag & Drop करें</div>
 </div>
 
 <div class="grid">
@@ -42,6 +42,10 @@ button.blue{background:#1d72e8}button:disabled{opacity:.5;cursor:not-allowed}
 <div><label class="field">Height (px)</label><input id="height" type="number" min="1" placeholder="जैसे 300"></div>
 <div><label class="field">Target Size (KB) — optional</label><input id="target" type="number" min="1" placeholder="जैसे 50"></div>
 <div><label class="field">Format</label><select id="format"><option value="image/jpeg">JPG</option><option value="image/png">PNG</option><option value="image/webp">WEBP</option></select></div>
+</div>
+<div style="margin-top:14px">
+<label class="field">Image Quality: <span id="qualityValue">90</span>%</label>
+<input id="quality" type="range" min="10" max="100" value="90" style="width:100%;margin-top:8px">
 </div>
 
 <div class="lock"><label><input id="lock" type="checkbox" checked> Aspect Ratio Lock</label></div>
@@ -52,7 +56,12 @@ button.blue{background:#1d72e8}button:disabled{opacity:.5;cursor:not-allowed}
 <div class="box"><b>Original Image</b><img id="originalPreview" alt="Original preview"></div>
 <div class="box"><b>Resized Image Preview</b><img id="resultPreview" alt="Resized preview"></div>
 </div>
-<div class="stats"><span class="badge" id="dimensions"></span><span class="badge" id="size"></span></div>
+<div class="stats">
+<span class="badge" id="originalInfo"></span>
+<span class="badge" id="dimensions"></span>
+<span class="badge" id="size"></span>
+</div>
+<div id="status" style="text-align:center;font-size:13px;color:#667085;margin:8px 0"></div>
 <button id="download" class="download">⬇️ Download Image</button>
 </div>
 
@@ -60,50 +69,92 @@ button.blue{background:#1d72e8}button:disabled{opacity:.5;cursor:not-allowed}
 </div></div>
 
 <script>
-const file=document.getElementById('file'),nameEl=document.getElementById('fileName'),w=document.getElementById('width'),h=document.getElementById('height'),target=document.getElementById('target'),format=document.getElementById('format'),lock=document.getElementById('lock'),process=document.getElementById('process'),preview=document.getElementById('preview'),originalPreview=document.getElementById('originalPreview'),resultPreview=document.getElementById('resultPreview');
-let img=null,blob=null,ratio=1;
+const file=document.getElementById('file'),dropZone=document.getElementById('dropZone'),
+nameEl=document.getElementById('fileName'),w=document.getElementById('width'),h=document.getElementById('height'),
+target=document.getElementById('target'),format=document.getElementById('format'),lock=document.getElementById('lock'),
+quality=document.getElementById('quality'),qualityValue=document.getElementById('qualityValue'),
+process=document.getElementById('process'),preview=document.getElementById('preview'),
+originalPreview=document.getElementById('originalPreview'),resultPreview=document.getElementById('resultPreview'),
+status=document.getElementById('status'),originalInfo=document.getElementById('originalInfo');
+let img=null,blob=null,ratio=1,originalFile=null;
 
-file.onchange=()=>{
- const f=file.files[0];if(!f)return;
- nameEl.textContent='Selected: '+f.name;
- const url=URL.createObjectURL(f);
- originalPreview.src=url;
+function loadFile(f){
+ if(!f || !f.type.startsWith('image/')){alert('कृपया JPG, PNG या WEBP image चुनें।');return;}
+ originalFile=f; nameEl.textContent='Selected: '+f.name;
+ const url=URL.createObjectURL(f); originalPreview.src=url;
  const x=new Image();
- x.onload=()=>{img=x;ratio=x.naturalWidth/x.naturalHeight;w.value=x.naturalWidth;h.value=x.naturalHeight;process.disabled=false;preview.style.display='block';resultPreview.removeAttribute('src');};
+ x.onload=()=>{
+   img=x; ratio=x.naturalWidth/x.naturalHeight;
+   w.value=x.naturalWidth; h.value=x.naturalHeight;
+   originalInfo.textContent='Original: '+x.naturalWidth+' × '+x.naturalHeight+' px | '+(f.size/1024).toFixed(1)+' KB';
+   process.disabled=false; preview.style.display='block'; resultPreview.removeAttribute('src');
+   document.getElementById('dimensions').textContent='';
+   document.getElementById('size').textContent='';
+   status.textContent='Image ready — अब Resize & Compress दबाएँ।';
+ };
+ x.onerror=()=>alert('Image load नहीं हो सकी।');
  x.src=url;
-};
+}
+file.onchange=()=>loadFile(file.files[0]);
+
+['dragenter','dragover'].forEach(e=>dropZone.addEventListener(e,ev=>{
+ ev.preventDefault(); dropZone.classList.add('dragover');
+}));
+['dragleave','drop'].forEach(e=>dropZone.addEventListener(e,ev=>{
+ ev.preventDefault(); dropZone.classList.remove('dragover');
+}));
+dropZone.addEventListener('drop',ev=>loadFile(ev.dataTransfer.files[0]));
+
 w.oninput=()=>{if(lock.checked&&img&&w.value)h.value=Math.max(1,Math.round(Number(w.value)/ratio))};
 h.oninput=()=>{if(lock.checked&&img&&h.value)w.value=Math.max(1,Math.round(Number(h.value)*ratio))};
+quality.oninput=()=>qualityValue.textContent=quality.value;
 
 const toBlob=(c,t,q)=>new Promise(r=>c.toBlob(r,t,q));
+
 async function compress(c,t,kb){
- let q=.92,b=await toBlob(c,t,q);
- if(!kb||t==='image/png')return b;
+ let q=Math.max(.1,Number(quality.value)/100), b=await toBlob(c,t,q);
+ if(!kb || t==='image/png') return b;
  const goal=Number(kb)*1024;
- for(let i=0;i<18&&b.size>goal;i++){q=Math.max(.03,q-.05);b=await toBlob(c,t,q)}
+ for(let i=0;i<25 && b.size>goal;i++){
+   q=Math.max(.03,q-.035);
+   b=await toBlob(c,t,q);
+ }
  return b;
 }
 
 process.onclick=async()=>{
  if(!img)return;
- const W=Math.max(1,parseInt(w.value)||img.naturalWidth),H=Math.max(1,parseInt(h.value)||img.naturalHeight),T=format.value;
- const c=document.createElement('canvas');c.width=W;c.height=H;const ctx=c.getContext('2d');
- if(T==='image/jpeg'){ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H)}
+ process.disabled=true; status.textContent='Processing…';
+ const W=Math.max(1,parseInt(w.value)||img.naturalWidth), H=Math.max(1,parseInt(h.value)||img.naturalHeight), T=format.value;
+ const c=document.createElement('canvas'); c.width=W; c.height=H;
+ const ctx=c.getContext('2d');
+ if(T==='image/jpeg'){ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);}
  ctx.drawImage(img,0,0,W,H);
  blob=await compress(c,T,target.value);
+ if(resultPreview.src) URL.revokeObjectURL(resultPreview.src);
  resultPreview.src=URL.createObjectURL(blob);
- document.getElementById('dimensions').textContent=W+' × '+H+' px';
- document.getElementById('size').textContent=(blob.size/1024).toFixed(1)+' KB';
- preview.style.display='block';
+ document.getElementById('dimensions').textContent='Final: '+W+' × '+H+' px';
+ document.getElementById('size').textContent='Final: '+(blob.size/1024).toFixed(1)+' KB';
+ status.textContent=target.value && blob.size>Number(target.value)*1024
+   ? 'Target KB से छोटा करने के लिए Quality या dimensions कम करें।'
+   : '✅ Image तैयार है — Download Image दबाएँ।';
+ preview.style.display='block'; process.disabled=false;
 };
 
 document.getElementById('download').onclick=()=>{
- if(!blob)return;const ext=format.value.split('/')[1].replace('jpeg','jpg'),a=document.createElement('a');
- a.href=URL.createObjectURL(blob);a.download='meena-resized-image.'+ext;a.click();
+ if(!blob)return;
+ const ext=format.value.split('/')[1].replace('jpeg','jpg'),a=document.createElement('a');
+ a.href=URL.createObjectURL(blob); a.download='meena-resized-image.'+ext; a.click();
+ setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 };
+
 document.getElementById('reset').onclick=()=>{
- file.value='';img=null;blob=null;process.disabled=true;nameEl.textContent='JPG, PNG या WEBP image चुनें';
- w.value='';h.value='';target.value='';originalPreview.removeAttribute('src');resultPreview.removeAttribute('src');preview.style.display='none';
+ file.value=''; img=null; blob=null; originalFile=null; process.disabled=true;
+ nameEl.textContent='JPG, PNG या WEBP image चुनें — या यहाँ Drag & Drop करें';
+ w.value=''; h.value=''; target.value=''; quality.value=90; qualityValue.textContent='90';
+ originalPreview.removeAttribute('src'); resultPreview.removeAttribute('src');
+ preview.style.display='none'; status.textContent='';
+ originalInfo.textContent=''; document.getElementById('dimensions').textContent=''; document.getElementById('size').textContent='';
 };
 </script>
 </body></html>
